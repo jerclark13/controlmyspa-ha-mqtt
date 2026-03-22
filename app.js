@@ -120,6 +120,7 @@ class App extends EventEmitter {
     });
     self.spa.getPumps().forEach(pump => {
       self.mqtt.subscribe(`${topicPrefix}/pump/${pump.port}/set`);
+      self.mqtt.subscribe(`${topicPrefix}/pump/${pump.port}/speed/set`);
     });
     self.spa.getFilters().forEach(filter => {
       self.mqtt.subscribe(`${topicPrefix}/filter/${filter.port}/time/set`);
@@ -209,7 +210,7 @@ class App extends EventEmitter {
       self.componentBinarySensorDiscovery(self.spa, blower, "blower", "mdi:weather-windy", "HIGH");
     });
     self.spa.getPumps().forEach(pump => {
-      self.componentSelectDiscovery(self.spa, pump, "pump", "mdi:fan", ["OFF", "LOW", "HIGH"]);
+      self.componentFanDiscovery(self.spa, pump, "pump", "mdi:fan");
       self.componentBinarySensorDiscovery(self.spa, pump, "pump", "mdi:fan", "HIGH");
     });
     self.spa.getCirculationPumps().forEach(pump => {
@@ -259,7 +260,7 @@ class App extends EventEmitter {
     self.mqtt.publish("homeassistant/switch/" + objectId + "/config", JSON.stringify(config), { retain: true });
   }
 
-  componentSelectDiscovery(spa, component, type, icon, options) {
+  componentFanDiscovery(spa, component, type, icon) {
     let self = this;
     let spaId = spa.getSpaId();
     let name = `${type.charAt(0).toUpperCase()}${type.slice(1)}`.replace('_', ' ');
@@ -271,7 +272,7 @@ class App extends EventEmitter {
       objectId += "_" + component.port;
       name += " " +  (parseInt(component.port) + 1)
     }
-    let uniqueId = `controlmyspa_${objectId}_select`;
+    let uniqueId = `controlmyspa_${objectId}_fan`;
 
     let config = {
       "unique_id": uniqueId,
@@ -279,14 +280,20 @@ class App extends EventEmitter {
       "name": name,
       "icon": icon,
       "state_topic": componentTopic,
-      "value_template": "{{ value_json.value }}",
+      "state_value_template": "{% if value_json.value != 'OFF' %}ON{% else %}OFF{% endif %}",
       "command_topic": componentTopic + "/set",
-      "options": options,
+      "payload_on": "LOW",
+      "payload_off": "OFF",
+      "percentage_state_topic": componentTopic,
+      "percentage_value_template": "{% if value_json.value == 'HIGH' %}100{% elif value_json.value == 'LOW' %}50{% else %}0{% endif %}",
+      "percentage_command_topic": componentTopic + "/speed/set",
+      "speed_range_min": 1,
+      "speed_range_max": 2,
       "availability": self.getAvailabilityDiscovery(spa),
       "device": self.getDeviceDiscovery(spa)
     };
-    logDebug(`Send discover config for select ${type} ${component.port}: ${JSON.stringify(config)}`);
-    self.mqtt.publish("homeassistant/select/" + objectId + "/config", JSON.stringify(config), { retain: true });
+    logDebug(`Send discover config for fan ${type} ${component.port}: ${JSON.stringify(config)}`);
+    self.mqtt.publish("homeassistant/fan/" + objectId + "/config", JSON.stringify(config), { retain: true });
   }
 
   componentBinarySensorDiscovery(spa, component, type, icon, onValue) {
@@ -686,8 +693,14 @@ class App extends EventEmitter {
         self.setBlowerState(id, payload);
         break;
       case 'pump':
-        self.setJetState(id, payload);
-        break;   
+        if (subCommand === 'speed') {
+          let pct = parseInt(payload);
+          let state = pct >= 100 ? 'HIGH' : pct > 0 ? 'LOW' : 'OFF';
+          self.setJetState(id, state);
+        } else {
+          self.setJetState(id, payload);
+        }
+        break;
       case 'filter':
         self.setFilterSchedule(id, subCommand, payload);
         break;
