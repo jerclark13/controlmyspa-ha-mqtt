@@ -209,7 +209,7 @@ class App extends EventEmitter {
       self.componentBinarySensorDiscovery(self.spa, blower, "blower", "mdi:weather-windy", "HIGH");
     });
     self.spa.getPumps().forEach(pump => {
-      self.componentSwitchDiscovery(self.spa, pump, "pump", "mdi:fan");
+      self.componentSelectDiscovery(self.spa, pump, "pump", "mdi:fan", ["OFF", "LOW", "HIGH"]);
       self.componentBinarySensorDiscovery(self.spa, pump, "pump", "mdi:fan", "HIGH");
     });
     self.spa.getCirculationPumps().forEach(pump => {
@@ -257,6 +257,36 @@ class App extends EventEmitter {
     };
     logDebug(`Send discover config for switch ${type} ${component.port}: ${JSON.stringify(config)}`);
     self.mqtt.publish("homeassistant/switch/" + objectId + "/config", JSON.stringify(config), { retain: true });
+  }
+
+  componentSelectDiscovery(spa, component, type, icon, options) {
+    let self = this;
+    let spaId = spa.getSpaId();
+    let name = `${type.charAt(0).toUpperCase()}${type.slice(1)}`.replace('_', ' ');
+    let topicPrefix = `controlmyspa/${spaId}`;
+    let componentTopic = `${topicPrefix}/${type}`;
+    let objectId = `${spaId}_${type}`;
+    if ("port" in component && component.port != undefined) {
+      componentTopic += "/" + component.port;
+      objectId += "_" + component.port;
+      name += " " +  (parseInt(component.port) + 1)
+    }
+    let uniqueId = `controlmyspa_${objectId}_select`;
+
+    let config = {
+      "unique_id": uniqueId,
+      "object_id": objectId,
+      "name": name,
+      "icon": icon,
+      "state_topic": componentTopic,
+      "value_template": "{{ value_json.value }}",
+      "command_topic": componentTopic + "/set",
+      "options": options,
+      "availability": self.getAvailabilityDiscovery(spa),
+      "device": self.getDeviceDiscovery(spa)
+    };
+    logDebug(`Send discover config for select ${type} ${component.port}: ${JSON.stringify(config)}`);
+    self.mqtt.publish("homeassistant/select/" + objectId + "/config", JSON.stringify(config), { retain: true });
   }
 
   componentBinarySensorDiscovery(spa, component, type, icon, onValue) {
