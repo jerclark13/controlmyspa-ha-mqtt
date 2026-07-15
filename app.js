@@ -280,12 +280,12 @@ class App extends EventEmitter {
       "name": name,
       "icon": icon,
       "state_topic": componentTopic,
-      "state_value_template": "{% if value_json.value != 'OFF' %}ON{% else %}OFF{% endif %}",
+      "state_value_template": "{% if value_json.value != 'OFF' %}LOW{% else %}OFF{% endif %}",
       "command_topic": componentTopic + "/set",
       "payload_on": "LOW",
       "payload_off": "OFF",
       "percentage_state_topic": componentTopic,
-      "percentage_value_template": "{% if value_json.value == 'HIGH' %}100{% elif value_json.value == 'LOW' %}50{% else %}0{% endif %}",
+      "percentage_value_template": "{% if value_json.value == 'HIGH' %}2{% elif value_json.value == 'LOW' %}1{% else %}0{% endif %}",
       "percentage_command_topic": componentTopic + "/speed/set",
       "speed_range_min": 1,
       "speed_range_max": 2,
@@ -694,8 +694,9 @@ class App extends EventEmitter {
         break;
       case 'pump':
         if (subCommand === 'speed') {
-          let pct = parseInt(payload);
-          let state = pct >= 100 ? 'HIGH' : pct > 0 ? 'LOW' : 'OFF';
+          // HA publishes a value in [speed_range_min, speed_range_max] (1-2), 0 = off
+          let speed = parseInt(payload);
+          let state = speed >= 2 ? 'HIGH' : speed >= 1 ? 'LOW' : 'OFF';
           self.setJetState(id, state);
         } else {
           self.setJetState(id, payload);
