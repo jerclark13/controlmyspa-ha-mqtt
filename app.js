@@ -211,6 +211,7 @@ class App extends EventEmitter {
     });
     self.spa.getPumps().forEach(pump => {
       self.componentFanDiscovery(self.spa, pump, "pump", "mdi:fan");
+      self.pumpFullSwitchDiscovery(self.spa, pump);
       self.componentBinarySensorDiscovery(self.spa, pump, "pump", "mdi:fan", "HIGH");
     });
     self.spa.getCirculationPumps().forEach(pump => {
@@ -294,6 +295,43 @@ class App extends EventEmitter {
     };
     logDebug(`Send discover config for fan ${type} ${component.port}: ${JSON.stringify(config)}`);
     self.mqtt.publish("homeassistant/fan/" + objectId + "/config", JSON.stringify(config), { retain: true });
+  }
+
+  // Simple on/off companion to the fan entity: on = HIGH, off = OFF, so a
+  // single toggle (or HomeKit tap) runs the jets at full without the speed UI
+  pumpFullSwitchDiscovery(spa, component) {
+    let self = this;
+    let spaId = spa.getSpaId();
+    let name = "Pump";
+    let topicPrefix = `controlmyspa/${spaId}`;
+    let componentTopic = `${topicPrefix}/pump`;
+    let objectId = `${spaId}_pump`;
+    if ("port" in component && component.port != undefined) {
+      componentTopic += "/" + component.port;
+      objectId += "_" + component.port;
+      name += " " + (parseInt(component.port) + 1);
+    }
+    objectId += "_full";
+    name += " Full";
+    let uniqueId = `controlmyspa_${objectId}_switch`;
+
+    let config = {
+      "unique_id": uniqueId,
+      "object_id": objectId,
+      "name": name,
+      "icon": "mdi:fan-speed-3",
+      "state_topic": componentTopic,
+      "value_template": "{% if value_json.value == 'HIGH' %}HIGH{% else %}OFF{% endif %}",
+      "state_on": "HIGH",
+      "state_off": "OFF",
+      "payload_on": "HIGH",
+      "payload_off": "OFF",
+      "command_topic": componentTopic + "/set",
+      "availability": self.getAvailabilityDiscovery(spa),
+      "device": self.getDeviceDiscovery(spa)
+    };
+    logDebug(`Send discover config for pump full switch ${component.port}: ${JSON.stringify(config)}`);
+    self.mqtt.publish("homeassistant/switch/" + objectId + "/config", JSON.stringify(config), { retain: true });
   }
 
   componentBinarySensorDiscovery(spa, component, type, icon, onValue) {
