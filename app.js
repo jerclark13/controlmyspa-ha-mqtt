@@ -47,9 +47,13 @@ class App extends EventEmitter {
   startPollers() {
     let self = this;
     // Update status
+    // ControlMySpa doesn't push changes, so changes made on the tub panel, in
+    // the ControlMySpa app or by the spa's own jet timer only show up when we
+    // poll. Poll every minute (refresh_spa is now an upper bound: values
+    // below 1 still mean every minute).
     setInterval(() => {
-       self.spa.updateSpa();
-    }, 60 * 1000 * self.config.refreshSpa);
+      self.spa.updateSpa();
+    }, 60 * 1000 * Math.min(1, self.config.refreshSpa || 1));
   }
 
   mqttConnected() {
@@ -211,7 +215,8 @@ class App extends EventEmitter {
     });
     self.spa.getPumps().forEach(pump => {
       self.componentFanDiscovery(self.spa, pump, "pump", "mdi:fan");
-      self.pumpFullSwitchDiscovery(self.spa, pump);
+      self.pumpSpeedSwitchDiscovery(self.spa, pump, 'LOW');
+      self.pumpSpeedSwitchDiscovery(self.spa, pump, 'HIGH');
       self.componentBinarySensorDiscovery(self.spa, pump, "pump", "mdi:fan", "HIGH");
     });
     self.spa.getCirculationPumps().forEach(pump => {
@@ -281,9 +286,9 @@ class App extends EventEmitter {
       "name": name,
       "icon": icon,
       "state_topic": componentTopic,
-      "state_value_template": "{% if value_json.value != 'OFF' %}LOW{% else %}OFF{% endif %}",
+      "state_value_template": "{% if value_json.value != 'OFF' %}ON{% else %}OFF{% endif %}",
       "command_topic": componentTopic + "/set",
-      "payload_on": "LOW",
+      "payload_on": "ON",
       "payload_off": "OFF",
       "percentage_state_topic": componentTopic,
       "percentage_value_template": "{% if value_json.value == 'HIGH' %}2{% elif value_json.value == 'LOW' %}1{% else %}0{% endif %}",
@@ -297,9 +302,11 @@ class App extends EventEmitter {
     self.mqtt.publish("homeassistant/fan/" + objectId + "/config", JSON.stringify(config), { retain: true });
   }
 
-  // Simple on/off companion to the fan entity: on = HIGH, off = OFF, so a
-  // single toggle (or HomeKit tap) runs the jets at full without the speed UI
-  pumpFullSwitchDiscovery(spa, component) {
+  // Simple on/off companions to the fan entity, one per speed: on = that
+  // speed, off = OFF. Two plain tiles work better in the Home app than the fan
+  // slider. The HIGH one keeps its original "_full" ids so existing entities
+  // and HomeKit accessories don't change.
+  pumpSpeedSwitchDiscovery(spa, component, speed) {
     let self = this;
     let spaId = spa.getSpaId();
     let name = "Pump";
@@ -311,26 +318,26 @@ class App extends EventEmitter {
       objectId += "_" + component.port;
       name += " " + (parseInt(component.port) + 1);
     }
-    objectId += "_full";
-    name += " Full";
+    objectId += speed === 'HIGH' ? "_full" : "_low";
+    name += speed === 'HIGH' ? " Full" : " Low";
     let uniqueId = `controlmyspa_${objectId}_switch`;
 
     let config = {
       "unique_id": uniqueId,
       "object_id": objectId,
       "name": name,
-      "icon": "mdi:fan-speed-3",
+      "icon": speed === 'HIGH' ? "mdi:fan-speed-3" : "mdi:fan-speed-1",
       "state_topic": componentTopic,
-      "value_template": "{% if value_json.value == 'HIGH' %}HIGH{% else %}OFF{% endif %}",
-      "state_on": "HIGH",
+      "value_template": `{% if value_json.value == '${speed}' %}${speed}{% else %}OFF{% endif %}`,
+      "state_on": speed,
       "state_off": "OFF",
-      "payload_on": "HIGH",
+      "payload_on": speed,
       "payload_off": "OFF",
       "command_topic": componentTopic + "/set",
       "availability": self.getAvailabilityDiscovery(spa),
       "device": self.getDeviceDiscovery(spa)
     };
-    logDebug(`Send discover config for pump full switch ${component.port}: ${JSON.stringify(config)}`);
+    logDebug(`Send discover config for pump ${speed} switch ${component.port}: ${JSON.stringify(config)}`);
     self.mqtt.publish("homeassistant/switch/" + objectId + "/config", JSON.stringify(config), { retain: true });
   }
 
